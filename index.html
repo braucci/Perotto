@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sfida al Calcolatore — gioco della P101</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ---------- token ---------- */
+:root{
+  color-scheme: light;
+  --page:#d9dbd6;           /* parete della stazione */
+  --ink:#1b1d1f;
+  --board:#0d0e10;          /* lamiera del tabellone */
+  --board-edge:#2b2e33;
+  --flap:#1a1c20;           /* tessera */
+  --flap-hinge:#000;
+  --amber:#f2b134;          /* lettere di destinazione */
+  --amber-dim:#7a5a1e;
+  --white:#e9e7df;
+  --cyan:#5fd7e8;           /* giocatore */
+  --rose:#ff7b7b;           /* errori / mosse vietate */
+  --mute:#767b82;
+  --font-ui:"Space Grotesk",system-ui,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{ color-scheme: dark; --page:#121315; --ink:#e3e4e1; }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--page);color:var(--ink);font-family:var(--font-ui)}
+body{min-height:100dvh;display:flex;flex-direction:column;align-items:center;padding:16px 10px 32px}
+
+/* ---------- tabellone ---------- */
+.board{
+  width:min(100%,560px);background:var(--board);border:4px solid var(--board-edge);
+  border-radius:10px;box-shadow:0 20px 50px rgba(0,0,0,.45), inset 0 0 0 1px #000;
+  overflow:hidden;
+}
+.strip{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:10px 14px;border-bottom:1px solid #000;background:linear-gradient(#141619,#0d0e10)}
+.strip .title{font-family:var(--font-mono);font-weight:700;color:var(--amber);letter-spacing:.08em;font-size:15px}
+.strip .sub{color:var(--mute);font-size:12px}
+.strip .author{color:var(--mute);font-size:12px;text-align:right;line-height:1.2}
+
+/* righe del tabellone */
+.row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;
+  padding:10px 14px;border-bottom:1px solid #000;}
+.row .label{color:var(--white);font-size:14px}
+.row .label small{display:block;color:var(--mute);font-size:11px;margin-top:2px}
+.row.big .label{font-size:17px;font-weight:500}
+
+/* tessere a palette */
+.flaps{display:flex;gap:4px}
+.flap{position:relative;width:34px;height:48px;background:var(--flap);border-radius:4px;
+  font-family:var(--font-mono);font-weight:700;font-size:34px;line-height:48px;text-align:center;
+  color:var(--amber);overflow:hidden;box-shadow:inset 0 -1px 0 #333, 0 1px 0 #000}
+.flap::after{content:"";position:absolute;left:0;right:0;top:50%;height:1.5px;background:var(--flap-hinge);transform:translateY(-50%);opacity:.9}
+.flap.white{color:var(--white)}.flap.cyan{color:var(--cyan)}
+.big .flap{width:44px;height:62px;font-size:46px;line-height:62px}
+.flap.turn{animation:flip .09s linear}
+@keyframes flip{0%{transform:scaleY(1)}50%{transform:scaleY(.08)}100%{transform:scaleY(1)}}
+
+/* storico: righe "partenze" */
+.log{max-height:180px;overflow:auto;scrollbar-width:thin}
+.log .row{padding:7px 14px;grid-template-columns:28px 1fr auto auto;gap:12px;font-family:var(--font-mono);font-size:13px}
+.log .n{color:var(--mute)}
+.log .who{color:var(--white)}.log .who.pc{color:var(--amber)}.log .who.me{color:var(--cyan)}
+.log .mv{color:var(--white)}.log .tot{color:var(--mute)}
+.log .row.win .tot{color:var(--amber)}
+
+/* annuncio */
+.notice{padding:12px 14px;border-bottom:1px solid #000;min-height:46px;font-size:14px;color:var(--white);line-height:1.4}
+.notice .ban{color:var(--rose)}
+.notice .ok{color:var(--amber)}
+
+/* tastiera */
+.keys{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;padding:14px}
+.key{height:62px;border-radius:6px;border:1px solid #2d3036;background:linear-gradient(#24272c,#15171a);
+  color:var(--white);font-family:var(--font-mono);font-size:26px;font-weight:700;cursor:pointer;
+  box-shadow:0 3px 0 #000;transition:transform .05s}
+.key:active{transform:translateY(2px);box-shadow:0 1px 0 #000}
+.key:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.key:disabled{color:#3d4046;cursor:not-allowed;background:#111;box-shadow:none;border-color:#1c1e22}
+.key.ban{text-decoration:line-through;color:var(--rose);opacity:.55}
+.key.hint{box-shadow:0 3px 0 #000, 0 0 0 2px var(--amber) inset}
+
+/* comandi */
+.ctrl{display:flex;flex-wrap:wrap;gap:8px;padding:0 14px 14px}
+.ctrl label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--mute)}
+.ctrl input,.ctrl select{font:inherit;background:#15171a;color:var(--white);border:1px solid #2d3036;border-radius:4px;padding:5px 7px}
+.ctrl input[type=number]{width:64px;font-family:var(--font-mono)}
+.btn{font:inherit;font-weight:500;border-radius:6px;border:1px solid var(--amber-dim);background:#1a1710;color:var(--amber);padding:7px 12px;cursor:pointer}
+.btn.quiet{border-color:#2d3036;color:var(--mute);background:#15171a}
+.btn:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+
+footer{margin-top:14px;font-size:12px;color:var(--mute);text-align:center;max-width:560px;line-height:1.5}
+@media (max-width:400px){ .flap{width:28px;height:42px;font-size:28px;line-height:42px} .big .flap{width:38px;height:54px;font-size:40px;line-height:54px} .key{height:54px;font-size:22px} }
+@media (prefers-reduced-motion: reduce){ .flap.turn{animation:none} }
+</style>
+</head>
+<body>
+
+<main class="board" aria-live="polite">
+  <div class="strip">
+    <div>
+      <div class="title">SFIDA AL CALCOLATORE</div>
+      <div class="sub">il gioco della Olivetti Programma 101</div>
+    </div>
+    <div class="author">Biagio Raucci<br>tabellone n. 1</div>
+  </div>
+
+  <div class="row">
+    <div class="label">Obiettivo<small>chi lo raggiunge esattamente vince</small></div>
+    <div class="flaps" id="fTarget"></div>
+  </div>
+  <div class="row big">
+    <div class="label">Totale<small id="lastInfo">partita non iniziata</small></div>
+    <div class="flaps" id="fTotal"></div>
+  </div>
+  <div class="row">
+    <div class="label">Mancano</div>
+    <div class="flaps" id="fLeft"></div>
+  </div>
+
+  <div class="log" id="log"></div>
+
+  <div class="notice" id="notice">Scegli l'obiettivo e premi «Nuova partita».</div>
+
+  <div class="keys" id="keys"></div>
+
+  <div class="ctrl">
+    <label>Obiettivo <input type="number" id="target" min="10" max="99" value="50"></label>
+    <label>Inizia
+      <select id="first"><option value="me">io</option><option value="pc">il calcolatore</option></select>
+    </label>
+    <label>Avversario
+      <select id="level"><option value="perfect">imbattibile</option><option value="random">distratto</option></select>
+    </label>
+    <button class="btn" id="newGame">Nuova partita</button>
+    <button class="btn quiet" id="hint" title="evidenzia le mosse vincenti">Aiuto</button>
+    <button class="btn quiet" id="sound" title="suono delle palette">Suono: on</button>
+  </div>
+</main>
+
+<footer>
+  Regole: si somma a turno un numero da 1 a 6. Non si può ripetere l'ultimo numero dell'avversario
+  né il suo complementare a 7. Vince chi arriva esattamente all'obiettivo; chi non ha più mosse valide perde.
+</footer>
+
+<script>
+/* =====================================================================
+   MOTORE DI GIOCO (puro, senza DOM) — "core"
+   Stato: r = quanto manca all'obiettivo, k = ultimo numero dell'avversario (0 = nessuno).
+   ===================================================================== */
+const Core = (() => {
+  const MIN = 1, MAX = 6, SUM = 7;
+
+  // Mosse lecite: n in [1,6], n != k, n != 7-k, n <= r
+  function legal(r, k) {
+    const out = [];
+    for (let n = MIN; n <= MAX; n++) {
+      if (n === k || n === SUM - k) continue;
+      if (n > r) continue;
+      out.push(n);
+    }
+    return out;
+  }
+
+  // Posizione vincente per chi deve muovere? Ricorsione con memoizzazione.
+  // win(r,k) = ∃ n lecita : n == r  oppure  !win(r-n, n)
+  const memo = new Map();
+  function win(r, k) {
+    const key = r * 10 + k;
+    if (memo.has(key)) return memo.get(key);
+    let res = false;
+    for (const n of legal(r, k)) {
+      if (n === r || !win(r - n, n)) { res = true; break; }
+    }
+    memo.set(key, res);
+    return res;
+  }
+
+  // Mosse che portano alla vittoria (insieme vuoto = posizione perdente)
+  function winningMoves(r, k) {
+    return legal(r, k).filter(n => n === r || !win(r - n, n));
+  }
+
+  function choose(r, k, level) {
+    const L = legal(r, k);
+    if (!L.length) return null;
+    if (level === 'random') return L[Math.floor(Math.random() * L.length)];
+    const W = winningMoves(r, k);
+    const pool = W.length ? W : L;               // se perdente, tira a caso e spera nell'errore
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // --- test di invarianza (Stile Raucci: il motore si valida da solo) ---
+  (function selfTest() {
+    console.assert(legal(50, 0).length === 6, 'all\'inizio tutte le mosse sono lecite');
+    console.assert(JSON.stringify(legal(50, 3)) === '[1,2,5,6]', 'esclude 3 e 4');
+    console.assert(JSON.stringify(legal(50, 1)) === '[2,3,4,5]', 'esclude 1 e 6');
+    console.assert(legal(1, 1).length === 0, 'r=1 dopo un 1: nessuna mossa');
+    console.assert(win(3, 0) === true, 'r=3 si vince subito');
+    console.assert(win(1, 6) === false, 'r=1 dopo un 6 si perde');
+    for (let r = 1; r <= 99; r++) for (let k = 0; k <= 6; k++) {
+      const W = winningMoves(r, k);
+      console.assert(W.every(n => legal(r, k).includes(n)), 'le mosse vincenti sono lecite');
+      console.assert((W.length > 0) === win(r, k), 'coerenza win/winningMoves');
+    }
+  })();
+
+  return { legal, win, winningMoves, choose };
+})();
+
+/* =====================================================================
+   INTERFACCIA — "app"
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+let state = null;          // {target,total,last,turn,over,moves:[]}
+let soundOn = true, hintOn = false;
+
+/* --- suono delle palette (WebAudio, nessun file esterno) --- */
+let actx = null;
+function click() {
+  if (!soundOn) return;
+  actx ??= new (window.AudioContext || window.webkitAudioContext)();
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = 'square'; o.frequency.value = 1600 + Math.random() * 400;
+  g.gain.setValueAtTime(.05, actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(.0001, actx.currentTime + .03);
+  o.connect(g).connect(actx.destination); o.start(); o.stop(actx.currentTime + .03);
+}
+
+/* --- display a palette: ogni cifra scorre fino al valore richiesto --- */
+function makeFlaps(el, digits, cls) {
+  el.innerHTML = '';
+  for (let i = 0; i < digits; i++) {
+    const f = document.createElement('div');
+    f.className = 'flap ' + (cls || ''); f.textContent = '0'; f.dataset.v = '0';
+    el.appendChild(f);
+  }
+}
+function setFlaps(el, value) {
+  const s = String(value).padStart(el.children.length, '0');
+  [...el.children].forEach((f, i) => {
+    const target = s[i];
+    if (f.dataset.v === target) return;
+    const run = () => {
+      let cur = (parseInt(f.dataset.v) + 1) % 10;
+      f.dataset.v = cur; f.textContent = cur;
+      f.classList.remove('turn'); void f.offsetWidth; f.classList.add('turn'); click();
+      if (String(cur) !== target) setTimeout(run, 55);
+    };
+    run();
+  });
+}
+
+/* --- tastiera 1..6 --- */
+function buildKeys() {
+  const k = $('keys'); k.innerHTML = '';
+  for (let n = 1; n <= 6; n++) {
+    const b = document.createElement('button');
+    b.className = 'key'; b.textContent = n; b.dataset.n = n;
+    b.addEventListener('click', () => play('me', n));
+    k.appendChild(b);
+  }
+}
+function refreshKeys() {
+  const L = state && !state.over && state.turn === 'me' ? Core.legal(state.target - state.total, state.last) : [];
+  const W = hintOn && L.length ? Core.winningMoves(state.target - state.total, state.last) : [];
+  [...$('keys').children].forEach(b => {
+    const n = +b.dataset.n;
+    b.disabled = !L.includes(n);
+    b.classList.toggle('ban', !!state && !state.over && (n === state.last || n === 7 - state.last) && state.last !== 0);
+    b.classList.toggle('hint', W.includes(n));
+  });
+}
+
+/* --- storico --- */
+function addLog(who, n, total, win) {
+  const r = document.createElement('div');
+  r.className = 'row' + (win ? ' win' : '');
+  r.innerHTML = `<span class="n">${String(state.moves.length).padStart(2,'0')}</span>
+    <span class="who ${who}">${who === 'me' ? 'giocatore' : 'calcolatore'}</span>
+    <span class="mv">+${n}</span><span class="tot">${String(total).padStart(2,'0')}</span>`;
+  $('log').appendChild(r); $('log').scrollTop = 1e6;
+}
+
+/* --- partita --- */
+function newGame() {
+  const t = Math.min(99, Math.max(10, parseInt($('target').value) || 50));
+  $('target').value = t;
+  state = { target: t, total: 0, last: 0, turn: $('first').value, over: false, moves: [] };
+  $('log').innerHTML = '';
+  setFlaps($('fTarget'), t); setFlaps($('fTotal'), 0); setFlaps($('fLeft'), t);
+  $('lastInfo').textContent = 'partita in corso';
+  say(state.turn === 'me' ? 'Tocca a te: scegli un numero.' : 'Il calcolatore pensa…');
+  refreshKeys();
+  if (state.turn === 'pc') setTimeout(pcMove, 900);
+}
+
+function say(html) { $('notice').innerHTML = html; }
+
+function play(who, n) {
+  if (!state || state.over || state.turn !== who) return;
+  const r = state.target - state.total;
+  if (!Core.legal(r, state.last).includes(n)) {
+    say(`<span class="ban">Mossa vietata:</span> non puoi giocare ${n} (l'avversario ha giocato ${state.last}).`);
+    return;
+  }
+  state.total += n; state.last = n; state.moves.push({ who, n });
+  const won = state.total === state.target;
+  addLog(who, n, state.total, won);
+  setFlaps($('fTotal'), state.total); setFlaps($('fLeft'), state.target - state.total);
+  $('lastInfo').textContent = `${who === 'me' ? 'tu' : 'calcolatore'}: +${n} — ora vietati ${n} e ${7 - n}`;
+
+  if (won) return end(who === 'me' ? '<span class="ok">Hai vinto!</span> Hai raggiunto l\'obiettivo esattamente.'
+                                   : '<span class="ok">Vince il calcolatore.</span> Ha raggiunto l\'obiettivo esattamente.');
+  state.turn = who === 'me' ? 'pc' : 'me';
+  const next = Core.legal(state.target - state.total, state.last);
+  if (!next.length) return end(state.turn === 'me'
+      ? `<span class="ban">Nessuna mossa possibile</span> per te: con ${n} vietato non arrivi a ${state.target}. Vince il calcolatore.`
+      : `<span class="ok">Hai vinto!</span> Il calcolatore non ha mosse valide.`);
+  refreshKeys();
+  if (state.turn === 'pc') { say('Il calcolatore pensa…'); setTimeout(pcMove, 700 + Math.random() * 500); }
+  else say('Tocca a te.');
+}
+
+function pcMove() {
+  if (!state || state.over) return;
+  const n = Core.choose(state.target - state.total, state.last, $('level').value);
+  play('pc', n);
+}
+
+function end(msg) {
+  state.over = true; say(msg); refreshKeys();
+  $('lastInfo').textContent = 'partita conclusa';
+}
+
+/* --- avvio --- */
+makeFlaps($('fTarget'), 2); makeFlaps($('fTotal'), 2, 'white'); makeFlaps($('fLeft'), 2, 'cyan');
+buildKeys();
+$('newGame').addEventListener('click', newGame);
+$('hint').addEventListener('click', () => { hintOn = !hintOn; $('hint').textContent = hintOn ? 'Aiuto: on' : 'Aiuto'; refreshKeys(); });
+$('sound').addEventListener('click', () => { soundOn = !soundOn; $('sound').textContent = 'Suono: ' + (soundOn ? 'on' : 'off'); });
+document.addEventListener('keydown', e => { if (/^[1-6]$/.test(e.key)) play('me', +e.key); });
+setFlaps($('fTarget'), 50); setFlaps($('fLeft'), 50);
+</script>
+</body>
+</html>
